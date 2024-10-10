@@ -1,16 +1,8 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const { 
-    db, 
-    getQuestionsAleatoires, 
-    ajouterJoueur, 
-    creerPartie,
-    commencerManche,
-    enregistrerTour,
-    eliminerJoueur,
-    mettreAJourCagnotte
-} = require('./database');
+const MaillonFaibleGame = require('./gameLogic');
+const { db } = require('./database');
 
 const app = express();
 const server = http.createServer(app);
@@ -20,12 +12,79 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+// Créer une instance du jeu
+const game = new MaillonFaibleGame(io);
+
 app.get('/', (req, res) => {
   res.send('Serveur du Maillon Faible en ligne');
 });
 
+// Gestion des connexions Socket.IO
 io.on('connection', (socket) => {
   console.log('Un client s\'est connecté');
+
+// Créer une nouvelle partie
+socket.on('creerPartie', async (data, callback) => {
+    try {
+      const partieId = await game.demarrerPartie(data.nombreJoueurs);
+      socket.join(partieId);
+      callback({ success: true, partieId });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+});
+
+// Rejoindre une partie
+socket.on('rejoindrePartie', async (data, callback) => {
+    try {
+      await game.ajouterJoueur(data.partieId, data.nomJoueur);
+      socket.join(data.partieId);
+      callback({ success: true });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+});
+
+// Démarrer une manche
+socket.on('demarrerManche', async (data, callback) => {
+    try {
+      await game.demarrerManche(data.partieId);
+      callback({ success: true });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+});
+
+// Jouer un tour
+socket.on('jouerTour', async (data, callback) => {
+    try {
+      await game.jouerTour(data.partieId, data.joueurId, data.reponseCorrecte, data.aBanque);
+      callback({ success: true });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+});
+
+// Voter pour éliminer un joueur
+socket.on('voter', async (data, callback) => {
+    try {
+      game.enregistrerVote(data.partieId, data.votantId, data.votePourId);
+      callback({ success: true });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+});
+
+  // Répondre à une question du face-à-face
+  socket.on('repondreFaceAFace', async (data, callback) => {
+    try {
+      // Implémenter la logique pour traiter la réponse du face-à-face
+      // Cette fonctionnalité devra être ajoutée à gameLogic.js
+      callback({ success: true });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+  });
 });
 
 // Route existante pour récupérer des questions aléatoires
@@ -70,6 +129,8 @@ app.get('/api/joueurs', (req, res) => {
         }
     });
 });
+
+/* REDONANCE AVEC LA GESTION PAR SOCKET.IO
 
 // Route pour commencer une manche
 app.post('/api/parties/:partieId/manches', async (req, res) => {
@@ -118,6 +179,7 @@ app.put('/api/parties/:id/cagnotte', async (req, res) => {
         res.status(500).json({ message: 'Erreur lors de la mise à jour de la cagnotte', error: error.message });
     }
 });
+*/
 
 server.listen(PORT, () => {
   console.log(`Serveur en écoute sur le port ${PORT}`);
