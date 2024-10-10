@@ -1,6 +1,8 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+const { db, getQuestionsAleatoires } = require('./database');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -14,6 +16,17 @@ app.get('/', (req, res) => {
 
 io.on('connection', (socket) => {
   console.log('Un client s\'est connecté');
+});
+
+// Exemple d'utilisation de la base de données
+app.get('/questions', (req, res) => {
+    getQuestionsAleatoires(5, (err, questions) => {
+        if (err) {
+            res.status(500).json({ error: 'Erreur lors de la récupération des questions' });
+        } else {
+            res.json(questions);
+        }
+    });
 });
 
 server.listen(PORT, () => {
