@@ -11,6 +11,11 @@ const db = new sqlite3.Database('./maillon_faible.sqlite', (err) => {
 
 // Initialiser les tables de la base de données
 db.serialize(() => {
+
+    // Activer le mode autocommit (devrait être activé par défaut, mais on s'en assure)
+    db.run("PRAGMA journal_mode = WAL;");
+    db.run("PRAGMA synchronous = NORMAL;");
+
     // Créer la table des questions
     db.run(`CREATE TABLE IF NOT EXISTS questions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,7 +25,13 @@ db.serialize(() => {
         reponse3 TEXT NOT NULL,
         reponse4 TEXT NOT NULL,
         reponse_correcte INTEGER NOT NULL
-    )`);
+    )`, (err) => {
+        if (err) {
+            console.error('Erreur lors de la création de la table:', err.message);
+        } else {
+            console.log('Table questions créée ou déjà existante');
+        }
+    });
 
     // Créer la table des joueurs
     db.run(`CREATE TABLE IF NOT EXISTS joueurs (
@@ -39,18 +50,22 @@ db.serialize(() => {
     console.log('Tables créées avec succès');
 });
 
-// Fonction pour ajouter une question
-function ajouterQuestion(question, reponses, reponseCorrecte, callback) {
-    const sql = `INSERT INTO questions (question, reponse1, reponse2, reponse3, reponse4, reponse_correcte) 
-                 VALUES (?, ?, ?, ?, ?, ?)`;
-    db.run(sql, [question, ...reponses, reponseCorrecte], (err) => {
-        if (err) {
-            console.error('Erreur lors de l\'ajout de la question', err.message);
-            callback(err);
-        } else {
-            console.log('Question ajoutée avec succès');
-            callback(null);
-        }
+// Fonction pour ajouter une question à la base de données
+function ajouterQuestion(question, reponses, reponseCorrecte) {
+    return new Promise((resolve, reject) => {
+        const sql = `INSERT INTO questions (question, reponse1, reponse2, reponse3, reponse4, reponse_correcte) 
+                     VALUES (?, ?, ?, ?, ?, ?)`;
+        console.log('Exécution de la requête SQL:', sql);
+        console.log('Avec les paramètres:', [question, ...reponses, reponseCorrecte]);
+        db.run(sql, [question, ...reponses, reponseCorrecte], function(err) {
+            if (err) {
+                console.error('Erreur SQL lors de l\'ajout de la question:', err);
+                reject(err);
+            } else {
+                console.log(`Question insérée avec l'ID: ${this.lastID}`);
+                resolve(this.lastID);
+            }
+        });
     });
 }
 
