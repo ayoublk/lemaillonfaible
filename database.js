@@ -40,14 +40,16 @@ db.serialize(() => {
 });
 
 // Fonction pour ajouter une question
-function ajouterQuestion(question, reponses, reponseCorrecte) {
+function ajouterQuestion(question, reponses, reponseCorrecte, callback) {
     const sql = `INSERT INTO questions (question, reponse1, reponse2, reponse3, reponse4, reponse_correcte) 
                  VALUES (?, ?, ?, ?, ?, ?)`;
     db.run(sql, [question, ...reponses, reponseCorrecte], (err) => {
         if (err) {
             console.error('Erreur lors de l\'ajout de la question', err.message);
+            callback(err);
         } else {
             console.log('Question ajoutée avec succès');
+            callback(null);
         }
     });
 }
