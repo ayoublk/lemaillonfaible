@@ -8,7 +8,8 @@
     "server": "nodemon server.js",
     "client": "cd client && npm start",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "import-questions": "node import-questions.js"
+    "import-questions": "node import-questions.js",
+    "test-joueurs": "node test-joueurs"
   },
   "keywords": [],
   "author": "",
