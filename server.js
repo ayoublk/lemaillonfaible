@@ -2,7 +2,8 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const MaillonFaibleGame = require('./gameLogic');
-const { db } = require('./database');
+const { db, getQuestionsAleatoires, creerPartie, ajouterJoueur } = require('./database');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -19,9 +20,54 @@ app.get('/', (req, res) => {
   res.send('Serveur du Maillon Faible en ligne');
 });
 
+// Fonction pour gérer la déconnexion d'un joueur
+async function handlePlayerDisconnect(socket) {
+    try {
+      // Trouver la partie et le joueur associés à ce socket
+      const partieId = Array.from(socket.rooms).find(room => room !== socket.id);
+      if (!partieId) return; // Le socket n'était dans aucune salle de jeu
+  
+      const partie = game.parties.get(partieId);
+      if (!partie) return; // La partie n'existe plus
+  
+      const joueurDeconnecte = partie.joueurs.find(j => j.socketId === socket.id);
+      if (!joueurDeconnecte) return; // Le joueur n'est pas trouvé dans la partie
+  
+      // Marquer le joueur comme déconnecté
+      joueurDeconnecte.estDeconnecte = true;
+  
+      // Informer les autres joueurs de la déconnexion
+      socket.to(partieId).emit('joueurDeconnecte', {
+        joueurId: joueurDeconnecte.id,
+        nom: joueurDeconnecte.nom
+      });
+  
+      // Vérifier si la partie peut continuer
+      const joueursConnectes = partie.joueurs.filter(j => !j.estDeconnecte && !j.estElimine);
+      if (joueursConnectes.length < 2) {
+        // Terminer la partie si moins de 2 joueurs connectés
+        await game.terminerPartie(partieId, 'Trop peu de joueurs connectés');
+      } else if (partie.phaseActuelle === 'enCours') {
+        // Si la partie est en cours, passer au joueur suivant si c'était le tour du joueur déconnecté
+        if (partie.joueurActuel && partie.joueurActuel.id === joueurDeconnecte.id) {
+          await game.passerAuJoueurSuivant(partieId);
+        }
+      }
+      // Note: Si la partie est en phase de vote ou de face-à-face, vous devrez gérer ces cas spécifiquement
+    } catch (error) {
+      console.error('Erreur lors de la gestion de la déconnexion:', error);
+    }
+  }
+
 // Gestion des connexions Socket.IO
 io.on('connection', (socket) => {
   console.log('Un client s\'est connecté');
+
+// Gérer les déconnexions
+socket.on('disconnect', async () => {
+    console.log('Un client s\'est déconnecté', socket.id);
+    await handlePlayerDisconnect(socket);
+  });  
 
 // Créer une nouvelle partie
 socket.on('creerPartie', async (data, callback) => {
@@ -37,7 +83,7 @@ socket.on('creerPartie', async (data, callback) => {
 // Rejoindre une partie
 socket.on('rejoindrePartie', async (data, callback) => {
     try {
-      await game.ajouterJoueur(data.partieId, data.nomJoueur);
+      await game.ajouterJoueur(data.partieId, data.nomJoueur, socket.id);
       socket.join(data.partieId);
       callback({ success: true });
     } catch (error) {
@@ -75,16 +121,47 @@ socket.on('voter', async (data, callback) => {
     }
 });
 
-  // Répondre à une question du face-à-face
-  socket.on('repondreFaceAFace', async (data, callback) => {
+
+// Démarrer le face-à-face
+socket.on('demarrerFaceAFace', async (data, callback) => {
     try {
-      // Implémenter la logique pour traiter la réponse du face-à-face
-      // Cette fonctionnalité devra être ajoutée à gameLogic.js
+      await game.demarrerFaceAFace(data.partieId);
       callback({ success: true });
     } catch (error) {
       callback({ success: false, error: error.message });
     }
+});
+
+// Répondre à une question du face-à-face
+socket.on('repondreFaceAFace', async (data, callback) => {
+    try {
+      const resultat = await game.repondreFaceAFace(data.partieId, data.joueurId, data.reponse);
+      callback({ success: true, resultat });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
   });
+
+// Démarrer la mort subite
+socket.on('demarrerMortSubite', async (data, callback) => {
+    try {
+      await game.demarrerMortSubite(data.partieId);
+      callback({ success: true });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+});
+
+// Répondre à une question de mort subite
+socket.on('repondreMortSubite', async (data, callback) => {
+    try {
+      const resultat = await game.repondreMortSubite(data.partieId, data.joueurId, data.reponse);
+      callback({ success: true, resultat });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+});
+
 });
 
 // Route existante pour récupérer des questions aléatoires
@@ -129,57 +206,6 @@ app.get('/api/joueurs', (req, res) => {
         }
     });
 });
-
-/* REDONANCE AVEC LA GESTION PAR SOCKET.IO
-
-// Route pour commencer une manche
-app.post('/api/parties/:partieId/manches', async (req, res) => {
-    try {
-        const { partieId } = req.params;
-        const { numeroManche, dureeManche } = req.body;
-        const mancheId = await commencerManche(partieId, numeroManche, dureeManche);
-        res.status(201).json({ id: mancheId, message: 'Manche commencée avec succès' });
-    } catch (error) {
-        res.status(500).json({ message: 'Erreur lors du démarrage de la manche', error: error.message });
-    }
-});
-
-// Route pour enregistrer un tour
-app.post('/api/manches/:mancheId/tours', async (req, res) => {
-    try {
-        const { mancheId } = req.params;
-        const { joueurId, questionId, reponseCorrecte, aBanque } = req.body;
-        const tourId = await enregistrerTour(mancheId, joueurId, questionId, reponseCorrecte, aBanque);
-        res.status(201).json({ id: tourId, message: 'Tour enregistré avec succès' });
-    } catch (error) {
-        res.status(500).json({ message: 'Erreur lors de l\'enregistrement du tour', error: error.message });
-    }
-});
-
-// Route pour éliminer un joueur
-app.put('/api/joueurs/:id/eliminer', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { mancheElimination } = req.body;
-        await eliminerJoueur(id, mancheElimination);
-        res.json({ message: 'Joueur éliminé avec succès' });
-    } catch (error) {
-        res.status(500).json({ message: 'Erreur lors de l\'élimination du joueur', error: error.message });
-    }
-});
-
-// Route pour mettre à jour la cagnotte
-app.put('/api/parties/:id/cagnotte', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { montant } = req.body;
-        await mettreAJourCagnotte(id, montant);
-        res.json({ message: 'Cagnotte mise à jour avec succès' });
-    } catch (error) {
-        res.status(500).json({ message: 'Erreur lors de la mise à jour de la cagnotte', error: error.message });
-    }
-});
-*/
 
 server.listen(PORT, () => {
   console.log(`Serveur en écoute sur le port ${PORT}`);
