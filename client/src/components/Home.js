@@ -1,58 +1,90 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { emitEvent } from '../services/socket';
 import { useGame } from '../contexts/GameContext';
+import io from 'socket.io-client';
+
+// Créer une seule instance de socket pour tout le composant
+const socket = io('http://localhost:3000', {
+  transports: ['websocket', 'polling'], // Utiliser websocket en priorité, avec polling en fallback
+  reconnectionAttempts: 5, // Tenter de se reconnecter 5 fois
+  reconnectionDelay: 1000 // Attendre 1 seconde entre chaque tentative
+});
 
 const Home = () => {
-  // État local pour stocker le nom du joueur
-  const [nomJoueur, setNomJoueur] = useState('');
+  // États locaux pour le nom du joueur et l'ID de la partie
+  const [playerName, setPlayerName] = useState('');
+  const [gameId, setGameId] = useState('');
   
-  // Hook de navigation de React Router
+  // Hook de navigation et contexte du jeu
   const navigate = useNavigate();
-  
-  // Utilisation du contexte du jeu
   const { setGameState } = useGame();
 
+  // Effet pour gérer les événements de connexion
+  useEffect(() => {
+    // Événement quand la connexion est établie
+    socket.on('connect', () => {
+      console.log('Connecté au serveur depuis Home');
+    });
+
+    // Événement en cas d'erreur de connexion
+    socket.on('connect_error', (error) => {
+      console.log('Erreur de connexion depuis Home:', error);
+    });
+
+    // Nettoyage des listeners quand le composant est démonté
+    return () => {
+      socket.off('connect');
+      socket.off('connect_error');
+    };
+  }, []); // Le tableau vide signifie que cet effet ne s'exécute qu'une fois au montage
+
   // Fonction pour créer une nouvelle partie
-  const creerPartie = () => {
-    if (!nomJoueur.trim()) {
-      alert("Veuillez entrer un nom de joueur");
-      return;
-    }
-  
-    console.log("Tentative de création de partie...");
-    emitEvent('creerPartie', { nombreJoueurs: 8, nomJoueur }, (response) => {
-      console.log("Réponse reçue:", response);
+  const handleCreateGame = () => {
+    socket.emit('creerPartie', { nombreJoueurs: 8 }, (response) => {
       if (response.success) {
-        console.log("Partie créée avec succès. ID:", response.partieId);
-        setGameState(prev => {
-          const newState = {
-            ...prev,
-            partieId: response.partieId,
-            joueurId: response.joueurId,
-            phase: 'lobby'
-          };
-          console.log("Nouvel état du jeu:", newState);
-          return newState;
-        });
+        // Mise à jour de l'état global du jeu
+        setGameState({ partieId: response.partieId, joueurId: response.joueurId, nom: playerName });
+        // Navigation vers le lobby
         navigate('/lobby');
       } else {
-        console.error("Erreur lors de la création de la partie:", response.error);
-        alert("Erreur lors de la création de la partie : " + response.error);
+        alert('Erreur lors de la création de la partie');
       }
     });
   };
 
+  // Fonction pour rejoindre une partie existante
+  const handleJoinGame = () => {
+    socket.emit('rejoindrePartie', { partieId: gameId, nomJoueur: playerName }, (response) => {
+      if (response.success) {
+        // Mise à jour de l'état global du jeu
+        setGameState({ partieId: gameId, joueurId: response.joueurId, nom: playerName });
+        // Navigation vers le lobby
+        navigate('/lobby');
+      } else {
+        alert('Erreur lors de la tentative de rejoindre la partie');
+      }
+    });
+  };
+
+  // Rendu du composant
   return (
     <div>
-      <h1>Le Maillon Faible</h1>
+      <h2>Bienvenue au Maillon Faible Online</h2>
       <input
         type="text"
-        value={nomJoueur}
-        onChange={(e) => setNomJoueur(e.target.value)}
-        placeholder="Entrez votre nom"
+        placeholder="Votre nom"
+        value={playerName}
+        onChange={(e) => setPlayerName(e.target.value)}
       />
-      <button onClick={creerPartie}>Créer une partie</button>
+      <button onClick={handleCreateGame}>Créer une nouvelle partie</button>
+      <br />
+      <input
+        type="text"
+        placeholder="ID de la partie"
+        value={gameId}
+        onChange={(e) => setGameId(e.target.value)}
+      />
+      <button onClick={handleJoinGame}>Rejoindre une partie</button>
     </div>
   );
 };
