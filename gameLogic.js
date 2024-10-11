@@ -19,6 +19,7 @@ class MaillonFaibleGame extends EventEmitter {
      * @param {SocketIO.Server} io - L'instance de Socket.IO pour la communication en temps réel
      */
     constructor(io) {
+        super(); // Appel du constructeur de la classe parent (EventEmitter)
         this.io = io;
         this.parties = new Map();
     }
