@@ -28,7 +28,11 @@ const Home = () => {
 
     // Événement en cas d'erreur de connexion
     socket.on('connect_error', (error) => {
-      console.log('Erreur de connexion depuis Home:', error);
+      console.log('Erreur de connexion depuis Home:', error.message);
+    });
+
+    socket.on('error', (error) => {
+        console.log('Erreur Socket.IO:', error);
     });
 
     // Nettoyage des listeners quand le composant est démonté

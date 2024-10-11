@@ -1,17 +1,23 @@
 const express = require('express');
 const http = require('http');
-const socketIo = require('socket.io');
+const { Server } = require("socket.io");
 const MaillonFaibleGame = require('./gameLogic');
 const { db, getQuestionsAleatoires, creerPartie, ajouterJoueur } = require('./database');
 
-
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Permet toutes les origines en développement
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Créer une instance du jeu
 const game = new MaillonFaibleGame(io);
@@ -61,13 +67,17 @@ async function handlePlayerDisconnect(socket) {
 
 // Gestion des connexions Socket.IO
 io.on('connection', (socket) => {
-  console.log('Un client s\'est connecté');
+  console.log('Un client s\'est connecté', socket.id);
 
 // Gérer les déconnexions
 socket.on('disconnect', async () => {
     console.log('Un client s\'est déconnecté', socket.id);
     await handlePlayerDisconnect(socket);
-  });  
+  });
+  
+socket.on('error', (error) => {
+  console.error('Erreur Socket.IO:', error);
+});
 
 // Créer une nouvelle partie
 socket.on('creerPartie', async (data, callback) => {
