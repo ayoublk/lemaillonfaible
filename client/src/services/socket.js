@@ -1,6 +1,6 @@
-import io from 'socket.io-client';
+/*import io from 'socket.io-client';
 
-const socket = io('http://localhost:3000', {
+const socket = io('http://localhost:5000', {
   transports: ['websocket'],
   upgrade: false,
   reconnection: true,
@@ -23,4 +23,4 @@ export const emitEvent = (event, data) => {
   socket.emit(event, data);
 };
 
-export default socket;
+export default socket;*/

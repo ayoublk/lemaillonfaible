@@ -4,10 +4,9 @@ import { useGame } from '../contexts/GameContext';
 import io from 'socket.io-client';
 
 // Créer une seule instance de socket pour tout le composant
-const socket = io('http://localhost:3000', {
-  transports: ['websocket', 'polling'], // Utiliser websocket en priorité, avec polling en fallback
-  reconnectionAttempts: 5, // Tenter de se reconnecter 5 fois
-  reconnectionDelay: 1000 // Attendre 1 seconde entre chaque tentative
+const socket = io('http://localhost:5000', {
+  transports: ['websocket'],
+  upgrade: false
 });
 
 const Home = () => {
@@ -21,26 +20,30 @@ const Home = () => {
 
   // Effet pour gérer les événements de connexion
   useEffect(() => {
-    // Événement quand la connexion est établie
     socket.on('connect', () => {
-      console.log('Connecté au serveur depuis Home');
+        console.log('Connecté au serveur depuis Home');
+        socket.emit('testEvent', 'Hello Server');
     });
 
-    // Événement en cas d'erreur de connexion
+    socket.on('disconnect', (reason) => {
+        console.log('Déconnecté du serveur:', reason);
+    });
+
     socket.on('connect_error', (error) => {
-      console.log('Erreur de connexion depuis Home:', error.message);
+        console.log('Erreur de connexion:', error.message);
     });
 
     socket.on('error', (error) => {
         console.log('Erreur Socket.IO:', error);
     });
 
-    // Nettoyage des listeners quand le composant est démonté
     return () => {
-      socket.off('connect');
-      socket.off('connect_error');
+        socket.off('connect');
+        socket.off('disconnect');
+        socket.off('connect_error');
+        socket.off('error');
     };
-  }, []); // Le tableau vide signifie que cet effet ne s'exécute qu'une fois au montage
+}, []);
 
   // Fonction pour créer une nouvelle partie
   const handleCreateGame = () => {

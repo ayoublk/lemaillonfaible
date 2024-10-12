@@ -10,11 +10,12 @@ const io = new Server(server, {
   cors: {
     origin: "*", // Permet toutes les origines en développement
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -69,14 +70,27 @@ async function handlePlayerDisconnect(socket) {
 io.on('connection', (socket) => {
   console.log('Un client s\'est connecté', socket.id);
 
+socket.on('testEvent', (msg) => {
+  console.log('Message reçu du client:', msg);
+  socket.emit('testResponse', 'Hello from server');
+});
+
 // Gérer les déconnexions
 socket.on('disconnect', async () => {
     console.log('Un client s\'est déconnecté', socket.id);
     await handlePlayerDisconnect(socket);
   });
+
+socket.on('disconnect', (reason) => {
+  console.log('Déconnexion:', socket.id, 'Raison:', reason);
+});
   
 socket.on('error', (error) => {
   console.error('Erreur Socket.IO:', error);
+});
+
+socket.on('connect_error', (err) => {
+  console.log(`connect_error due to ${err.message}`);
 });
 
 // Créer une nouvelle partie
@@ -174,6 +188,10 @@ socket.on('repondreMortSubite', async (data, callback) => {
 
 });
 
+app.get('/test', (req, res) => {
+  res.send('Server is running');
+});
+
 // Route existante pour récupérer des questions aléatoires
 app.get('/questions', (req, res) => {
     getQuestionsAleatoires(5, (err, questions) => {
@@ -216,6 +234,7 @@ app.get('/api/joueurs', (req, res) => {
         }
     });
 });
+
 
 server.listen(PORT, () => {
   console.log(`Serveur en écoute sur le port ${PORT}`);
