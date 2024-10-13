@@ -3,10 +3,11 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 // import io from 'socket.io-client';
 import { GameProvider } from './contexts/GameContext';
 import Home from './components/Home'; // Assurez-vous que le chemin est correct
+import Lobby from './components/Lobby';
+
 
 
 // Composants simplifiés pour le test
-const Lobby = () => <div>Lobby</div>;
 const Game = () => <div>Game</div>;
 
 function App() {

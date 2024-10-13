@@ -48,12 +48,15 @@ class MaillonFaibleGame extends EventEmitter {
      * @param {string} nomJoueur - Le nom du joueur à ajouter
      * @param {string} socketID - L'ID du socket
      */
-    async ajouterJoueur(partieId, nomJoueur, socketId) {
-        const joueurId = await ajouterJoueur(nomJoueur, partieId);
+    ajouterJoueur(partieId, nomJoueur, socketId) {
         const partie = this.parties.get(partieId);
-        partie.joueurs.push({ id: joueurId, nom: nomJoueur, estElimine: false, estDeconnecte: false, socketId: socketId });
-        this.io.to(partieId).emit('nouveauJoueur', { id: joueurId, nom: nomJoueur });
-    }
+        if (partie) {
+          const nouveauJoueur = { id: socketId, nom: nomJoueur, estElimine: false };
+          partie.joueurs.push(nouveauJoueur);
+          return nouveauJoueur;
+        }
+        throw new Error('Partie non trouvée');
+      }
 
      /**
      * Démarre une nouvelle manche dans une partie
@@ -480,6 +483,15 @@ class MaillonFaibleGame extends EventEmitter {
         }
         return false;
     }
+
+    
+      demarrerPartie(partieId) {
+        const partie = this.parties.get(partieId);
+        if (partie) {
+          partie.statut = 'enCours';
+          // Logique supplémentaire pour démarrer la partie
+        }
+      }
 }
 
 module.exports = MaillonFaibleGame;

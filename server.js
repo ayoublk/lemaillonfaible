@@ -186,6 +186,25 @@ socket.on('repondreMortSubite', async (data, callback) => {
     }
 });
 
+socket.on('joinLobby', ({ partieId, joueurId }) => {
+  socket.join(partieId);
+  const partie = game.parties.get(partieId);
+  if (partie) {
+    io.to(partieId).emit('updatePlayerList', partie.joueurs);
+    // Vérifier si le joueur est l'hôte (premier joueur)
+    const isHost = partie.joueurs[0].id === joueurId;
+    socket.emit('hostStatus', isHost);
+  }
+});
+
+socket.on('startGame', ({ partieId }) => {
+  const partie = game.parties.get(partieId);
+  if (partie) {
+    partie.statut = 'enCours';
+    io.to(partieId).emit('gameStarted');
+  }
+});
+
 });
 
 app.get('/test', (req, res) => {

@@ -1,26 +1,26 @@
-/*import io from 'socket.io-client';
+import io from 'socket.io-client';
 
-const socket = io('http://localhost:5000', {
+const SOCKET_URL = 'http://localhost:5000';
+
+export const socket = io(SOCKET_URL, {
   transports: ['websocket'],
-  upgrade: false,
-  reconnection: true,
-  forceNew: true
+  upgrade: false
 });
 
-export const connectSocket = () => {
-  socket.connect();
-};
+socket.on('connect', () => {
+  console.log('Connecté au serveur');
+});
 
-export const disconnectSocket = () => {
-  socket.disconnect();
-};
+socket.on('disconnect', (reason) => {
+  console.log('Déconnecté du serveur:', reason);
+});
 
-export const subscribeToEvent = (event, callback) => {
-  socket.on(event, callback);
-};
+socket.on('connect_error', (error) => {
+  console.log('Erreur de connexion:', error.message);
+});
 
-export const emitEvent = (event, data) => {
-  socket.emit(event, data);
-};
+socket.on('error', (error) => {
+  console.log('Erreur Socket.IO:', error);
+});
 
-export default socket;*/
+export default socket;
