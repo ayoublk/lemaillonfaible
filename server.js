@@ -117,43 +117,58 @@ socket.on('rejoindrePartie', async (data, callback) => {
 
 // Démarrer une manche
 socket.on('demarrerManche', async (data, callback) => {
-    try {
-      await game.demarrerManche(data.partieId);
-      callback({ success: true });
-    } catch (error) {
-      callback({ success: false, error: error.message });
-    }
+  try {
+    const mancheInfo = await game.demarrerManche(data.partieId);
+    io.to(data.partieId).emit('updateGameState', mancheInfo);
+    callback({ success: true });
+  } catch (error) {
+    callback({ success: false, error: error.message });
+  }
 });
 
 // Jouer un tour
 socket.on('jouerTour', async (data, callback) => {
-    try {
-      await game.jouerTour(data.partieId, data.joueurId, data.reponseCorrecte, data.aBanque);
-      callback({ success: true });
-    } catch (error) {
-      callback({ success: false, error: error.message });
+  try {
+    const tourInfo = await game.jouerTour(data.partieId, data.joueurId, data.reponseCorrecte, data.aBanque);
+    io.to(data.partieId).emit('updateGameState', tourInfo);
+    
+    if (tourInfo.nouvelleQuestion) {
+      io.to(data.partieId).emit('questionReceived', tourInfo.nouvelleQuestion);
     }
+    
+    if (tourInfo.prochainJoueur) {
+      io.to(data.partieId).emit('playerTurn', tourInfo.prochainJoueur);
+    }
+    
+    callback({ success: true });
+  } catch (error) {
+    callback({ success: false, error: error.message });
+  }
 });
 
 // Voter pour éliminer un joueur
 socket.on('voter', async (data, callback) => {
-    try {
-      game.enregistrerVote(data.partieId, data.votantId, data.votePourId);
-      callback({ success: true });
-    } catch (error) {
-      callback({ success: false, error: error.message });
+  try {
+    const voteInfo = game.enregistrerVote(data.partieId, data.votantId, data.votePourId);
+    if (voteInfo.voteTermine) {
+      io.to(data.partieId).emit('startVoting', voteInfo.resultatVote);
     }
+    callback({ success: true });
+  } catch (error) {
+    callback({ success: false, error: error.message });
+  }
 });
 
 
-// Démarrer le face-à-face
-socket.on('demarrerFaceAFace', async (data, callback) => {
-    try {
-      await game.demarrerFaceAFace(data.partieId);
-      callback({ success: true });
-    } catch (error) {
-      callback({ success: false, error: error.message });
-    }
+ // Démarrer le face-à-face
+ socket.on('demarrerFaceAFace', async (data, callback) => {
+  try {
+    const faceAFaceInfo = await game.demarrerFaceAFace(data.partieId);
+    io.to(data.partieId).emit('startFaceToFace', faceAFaceInfo);
+    callback({ success: true });
+  } catch (error) {
+    callback({ success: false, error: error.message });
+  }
 });
 
 // Répondre à une question du face-à-face
@@ -205,6 +220,16 @@ socket.on('startGame', ({ partieId }) => {
   }
 });
 
+// Gestionnaire pour la fin de partie
+game.on('gameOver', (partieId, winner) => {
+  io.to(partieId).emit('gameOver', winner);
+});
+
+
+});
+
+io.on("connect_error", (err) => {
+  console.log(`connect_error due to ${err.message}`);
 });
 
 app.get('/test', (req, res) => {

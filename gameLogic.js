@@ -40,6 +40,7 @@ class MaillonFaibleGame extends EventEmitter {
             tourActuel: 0,
             chaineCourante: 0
         });
+        this.updateGameState(partieId)
         return partieId;
     }
     /**
@@ -53,6 +54,7 @@ class MaillonFaibleGame extends EventEmitter {
         if (partie) {
           const nouveauJoueur = { id: socketId, nom: nomJoueur, estElimine: false };
           partie.joueurs.push(nouveauJoueur);
+          this.updateGameState(partieId)
           return nouveauJoueur;
         }
         throw new Error('Partie non trouvée');
@@ -73,6 +75,29 @@ class MaillonFaibleGame extends EventEmitter {
         partie.questions = await new Promise((resolve) => getQuestionsAleatoires(20, (err, questions) => resolve(questions)));
         // Informe tous les clients que la manche a démarré et envoie les questions
         this.io.to(partieId).emit('mancheDemarree', { mancheId, nombreQuestions: partie.questions.length });
+        const premiereQuestion = partie.questions[0];
+        this.io.to(partieId).emit('questionReceived', premiereQuestion);
+        this.io.to(partieId).emit('playerTurn', partie.joueurs[0].id);
+        this.updateGameState(partieId)
+        return { mancheId, nombreQuestions: partie.questions.length, premiereQuestion };
+    }
+    
+    determinerProchainJoueur(partie) {
+        const joueursActifs = partie.joueurs.filter(j => !j.estElimine && !j.estDeconnecte);
+        if (joueursActifs.length === 0) {
+            throw new Error('Aucun joueur actif disponible');
+        }
+    
+        let indexJoueurActuel = joueursActifs.findIndex(j => j.id === partie.joueurActuel.id);
+        if (indexJoueurActuel === -1) {
+            // Si le joueur actuel n'est plus actif, on commence par le premier joueur actif
+            indexJoueurActuel = 0;
+        } else {
+            // Passer au joueur suivant
+            indexJoueurActuel = (indexJoueurActuel + 1) % joueursActifs.length;
+        }
+    
+        return joueursActifs[indexJoueurActuel];
     }
 
     // Gère le déroulement d'un tour de jeu, y compris la mise à jour de la chaîne de bonnes réponses et la possibilité de banquer.
@@ -106,6 +131,24 @@ class MaillonFaibleGame extends EventEmitter {
         if (partie.tourActuel >= partie.questions.length) {
             await this.terminerManche(partieId);
         }
+
+        const prochainJoueur = this.determinerProchainJoueur(partie);
+        const nouvelleQuestion = partie.questions[partie.tourActuel];
+        
+        this.io.to(partieId).emit('questionReceived', nouvelleQuestion);
+        this.io.to(partieId).emit('playerTurn', prochainJoueur.id);
+
+        this.updateGameState(partieId)
+        
+        return {
+            joueurId,
+            reponseCorrecte,
+            aBanque,
+            valeurTour,
+            cagnotte: partie.cagnotte,
+            nouvelleQuestion,
+            prochainJoueur: prochainJoueur.id
+        };
     }
 
     // Permet d'ajouter le montant actuel de la chaîne à la cagnotte.
@@ -116,6 +159,7 @@ class MaillonFaibleGame extends EventEmitter {
         partie.cagnotte += montantAjoute;
         partie.chaineCourante = 0;
         await mettreAJourCagnotte(partieId, montantAjoute);
+        this.updateGameState(partieId)
     }
 
     async passerAuJoueurSuivant(partieId) {
@@ -180,6 +224,11 @@ class MaillonFaibleGame extends EventEmitter {
             // Préparer la prochaine manche
             this.preparerProchaineManche(partieId);
         }
+
+        this.io.to(partieId).emit('startVoting', {
+            joueursVotants: partie.joueurs.filter(j => !j.estElimine).map(j => ({ id: j.id, nom: j.nom }))
+        });
+        this.updateGameState(partieId)
     }
 
     
@@ -190,6 +239,7 @@ class MaillonFaibleGame extends EventEmitter {
             partie.phaseVote.votes[votantId] = votePourId;
             this.io.to(partieId).emit('voteEnregistre', { votantId });
         }
+        this.updateGameState(partieId)
     }
 
     // Méthode pour compter les votes
@@ -235,6 +285,7 @@ class MaillonFaibleGame extends EventEmitter {
         this.io.to(partieId).emit('preparationProchaineManche', {
             joueursRestants: partie.joueurs.filter(j => !j.estElimine).map(j => ({ id: j.id, nom: j.nom }))
         });
+        this.updateGameState(partieId)
 
         // Commencer la prochaine manche après un court délai
         setTimeout(() => this.demarrerManche(partieId), 5000); // 5 secondes de pause entre les manches
@@ -254,10 +305,11 @@ class MaillonFaibleGame extends EventEmitter {
         );
 
         // Informer les clients du début du face-à-face
-        this.io.to(partieId).emit('debutFaceAFace', {
+        this.io.to(partieId).emit('startFaceToFace', {
             finalistes: finalistes.map(j => ({ id: j.id, nom: j.nom })),
             cagnotteTotale: partie.cagnotte
         });
+        this.updateGameState(partieId)
 
         // Commencer les tours du face-à-face
         await this.jouerToursFaceAFace(partieId);
@@ -291,7 +343,7 @@ class MaillonFaibleGame extends EventEmitter {
         };
     
         this.io.to(partieId).emit('resultatQuestionFaceAFace', resultat);
-    
+        this.updateGameState(partieId)
         return resultat;
     }
       
@@ -309,55 +361,61 @@ class MaillonFaibleGame extends EventEmitter {
             return resultat;
         }
 
-      async jouerToursFaceAFace(partieId) {
-        const partie = this.parties.get(partieId);
-        const finalistes = partie.joueurs.filter(j => !j.estElimine);
-        partie.tourActuel = 0;
-    
-        for (let i = 0; i < 5; i++) { // 5 questions par finaliste
-            for (const finaliste of finalistes) {
-                const question = partie.questionsFaceAFace[partie.tourActuel];
-                
-                // Envoyer la question au client
-                this.io.to(partieId).emit('questionFaceAFace', {
-                    joueurId: finaliste.id,
-                    question: question.question,
-                    reponses: [question.reponse1, question.reponse2, question.reponse3, question.reponse4]
-                });
-    
-                // Attendre la réponse du client (avec un timeout)
-                try {
-                    await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            reject(new Error('Temps écoulé'));
-                        }, 10000); // 10 secondes pour répondre
-    
-                        this.io.to(partieId).once(`reponseFaceAFace:${finaliste.id}`, (reponse) => {
-                            clearTimeout(timeout);
-                            resolve(reponse);
-                        });
-                    });
-                } catch (error) {
-                    // Gérer le cas où le joueur n'a pas répondu à temps
-                    this.io.to(partieId).emit('resultatQuestionFaceAFace', {
+        async jouerToursFaceAFace(partieId) {
+            const partie = this.parties.get(partieId);
+            const finalistes = partie.joueurs.filter(j => !j.estElimine);
+            partie.tourActuel = 0;
+        
+            for (let i = 0; i < 5; i++) { // 5 questions par finaliste
+                for (const finaliste of finalistes) {
+                    const question = partie.questionsFaceAFace[partie.tourActuel];
+                    
+                    // Envoyer la question au client
+                    this.io.to(partieId).emit('questionFaceAFace', {
                         joueurId: finaliste.id,
-                        reponseCorrecte: false,
-                        scoreActuel: finaliste.scoreFaceAFace,
-                        message: 'Temps écoulé'
+                        question: question.question,
+                        reponses: [question.reponse1, question.reponse2, question.reponse3, question.reponse4]
                     });
-                    continue; // Passer au joueur suivant
+        
+                    try {
+                        // Attendre la réponse du client (avec un timeout)
+                        const reponse = await new Promise((resolve, reject) => {
+                            const timeout = setTimeout(() => {
+                                reject(new Error('Temps écoulé'));
+                            }, 10000); // 10 secondes pour répondre
+        
+                            this.io.to(partieId).once(`reponseFaceAFace:${finaliste.id}`, (reponse) => {
+                                clearTimeout(timeout);
+                                resolve(reponse);
+                            });
+                        });
+        
+                        // La réponse a été reçue, on peut la traiter
+                        const resultat = await this.repondreFaceAFace(partieId, finaliste.id, reponse);
+        
+                        console.log(`Tour face-à-face : Joueur ${finaliste.id} a répondu. Résultat : ${resultat.reponseCorrecte ? 'Correct' : 'Incorrect'}`);
+        
+                    } catch (error) {
+                        // Gérer le cas où le joueur n'a pas répondu à temps
+                        console.error(`Erreur lors de la réponse de ${finaliste.id}:`, error.message);
+                        this.io.to(partieId).emit('resultatQuestionFaceAFace', {
+                            joueurId: finaliste.id,
+                            reponseCorrecte: false,
+                            scoreActuel: finaliste.scoreFaceAFace,
+                            message: 'Temps écoulé'
+                        });
+                    }
+        
+                    partie.tourActuel++;
+                    
+                    // Mise à jour de l'état du jeu après chaque tour
+                    this.updateGameState(partieId);
                 }
-    
-                // La réponse a été reçue, on peut la traiter
-                const resultat = await this.repondreFaceAFace(partieId, finaliste.id, reponse);
-    
-                partie.tourActuel++;
             }
+        
+            // Déterminer le gagnant
+            await this.determinerGagnantFaceAFace(partieId);
         }
-    
-        // Déterminer le gagnant
-        await this.determinerGagnantFaceAFace(partieId);
-    }
 
     async determinerGagnantFaceAFace(partieId) {
         const partie = this.parties.get(partieId);
@@ -374,11 +432,11 @@ class MaillonFaibleGame extends EventEmitter {
         }
 
         // Annoncer le gagnant
-        this.io.to(partieId).emit('finPartie', {
+        this.io.to(partieId).emit('gameOver', {
             gagnant: { id: gagnant.id, nom: gagnant.nom },
             cagnotteTotale: partie.cagnotte
         });
-
+        this.updateGameState(partieId)
         // Nettoyer les données de la partie
         this.parties.delete(partieId);
     }
@@ -413,6 +471,7 @@ class MaillonFaibleGame extends EventEmitter {
                         // Le joueur a perdu
                         const gagnant = finalistes.find(f => f.id !== finaliste.id);
                         await this.terminerPartie(partieId, gagnant);
+                        this.updateGameState(partieId)
                         return gagnant;
                     }
                 } catch (error) {
@@ -425,6 +484,7 @@ class MaillonFaibleGame extends EventEmitter {
                     });
                     const gagnant = finalistes.find(f => f.id !== finaliste.id);
                     await this.terminerPartie(partieId, gagnant);
+                    this.updateGameState(partieId)
                     return gagnant;
                 }
             }
@@ -455,6 +515,7 @@ class MaillonFaibleGame extends EventEmitter {
             await eliminerJoueur(joueurId, partie.mancheActuelle);
             this.io.to(partieId).emit('joueurElimine', { joueurId, mancheElimination: partie.mancheActuelle });
         }
+        this.updateGameState(partieId)
     }
 
     async terminerPartie(partieId, raison) {
@@ -465,6 +526,10 @@ class MaillonFaibleGame extends EventEmitter {
           raison: raison,
           cagnotteTotale: partie.cagnotte
         });
+        // Dernière mise à jour de l'état du jeu avant de terminer la partie
+        this.updateGameState(partieId);
+
+        console.log(`Partie ${partieId} terminée. Raison : ${raison}`);
     
         // Nettoyage de la partie
         this.parties.delete(partieId);
@@ -492,6 +557,22 @@ class MaillonFaibleGame extends EventEmitter {
           // Logique supplémentaire pour démarrer la partie
         }
       }
+
+      // Envoyer des mises à jour générales de l'état du jeu
+      updateGameState(partieId) {
+        const partie = this.parties.get(partieId);
+        this.io.to(partieId).emit('updateGameState', {
+            mancheActuelle: partie.mancheActuelle,
+            cagnotte: partie.cagnotte,
+            cagnotteManche: partie.cagnotteManche,
+            chaineCourante: partie.chaineCourante,
+            joueurs: partie.joueurs.map(j => ({
+                id: j.id,
+                nom: j.nom,
+                estElimine: j.estElimine
+            }))
+        });
+    }
 }
 
 module.exports = MaillonFaibleGame;
