@@ -8,11 +8,31 @@ const Lobby = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    const savedPartieId = localStorage.getItem('partieId');
+    const savedJoueurId = localStorage.getItem('joueurId');
+    if (savedPartieId && savedJoueurId) {
+      dispatch({ 
+        type: 'SET_PARTIE_INFO', 
+        payload: { 
+          partieId: savedPartieId, 
+          joueurId: savedJoueurId, 
+          nom: state.nom 
+        } 
+      });
+    }
+    console.log("État du jeu au montage du Lobby:", state);
+    if (!state.partieId) {
+      console.error("ID de partie manquant dans le Lobby");
+      navigate('/');
+      return;
+    }
+
     // Rejoindre la salle du lobby
     socket.emit('joinLobby', { partieId: state.partieId, joueurId: state.joueurId });
 
     // Écouter les mises à jour de la liste des joueurs
     socket.on('updatePlayerList', (updatedPlayers) => {
+      console.log("Mise à jour de la liste des joueurs:", updatedPlayers);
       dispatch({ type: 'UPDATE_PLAYERS', payload: updatedPlayers });
     });
 
@@ -40,13 +60,17 @@ const Lobby = () => {
   return (
     <div>
       <h2>Lobby</h2>
-      <p>ID de la partie: {state.partieId}</p>
+      <p>ID de la partie: {state.partieId || "ID non disponible"}</p>
       <h3>Joueurs :</h3>
-      <ul>
-        {state.joueurs.map((player) => (
-          <li key={player.id}>{player.nom}</li>
-        ))}
-      </ul>
+      {state.joueurs.length === 0 ? (
+        <p>Aucun joueur n'a encore rejoint la partie.</p>
+      ) : (
+        <ul>
+          {state.joueurs.map((player) => (
+            <li key={player.id}>{player.nom}</li>
+          ))}
+        </ul>
+      )}
       {state.isHost && <button onClick={startGame}>Démarrer la partie</button>}
     </div>
   );

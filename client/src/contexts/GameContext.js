@@ -25,6 +25,7 @@ const initialState = {
 function gameReducer(state, action) {
   switch (action.type) {
     case 'SET_PARTIE_INFO':
+      console.log("Mise à jour de l'état avec les infos de la partie:", action.payload);
       return { ...state, partieId: action.payload.partieId, joueurId: action.payload.joueurId, nom: action.payload.nom };
     case 'UPDATE_PLAYERS':
       return { ...state, joueurs: action.payload };

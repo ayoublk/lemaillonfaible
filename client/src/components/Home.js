@@ -15,7 +15,12 @@ const Home = () => {
   // Fonction pour créer une nouvelle partie
   const handleCreateGame = () => {
     socket.emit('creerPartie', { nombreJoueurs: 8 }, (response) => {
+      console.log("Réponse du serveur pour creerPartie:", response);
+      localStorage.setItem('partieId', response.partieId);
+      localStorage.setItem('joueurId', response.joueurId);
       if (response.success) {
+        console.log("Partie créée avec l'ID:", response.partieId);
+        console.log("ID du joueur:", response.joueurId);
         dispatch({ 
           type: 'SET_PARTIE_INFO', 
           payload: { 
@@ -24,8 +29,11 @@ const Home = () => {
             nom: playerName 
           } 
         });
-        navigate('/lobby');
+        setTimeout(() => {
+          navigate('/lobby');
+        }, 100);
       } else {
+        console.error("Erreur lors de la création de la partie:", response.error);
         alert('Erreur lors de la création de la partie');
       }
     });
